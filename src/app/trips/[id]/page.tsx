@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTripDetail } from "@/server/trips";
 import { GenerationProgress } from "@/components/trip/generation-progress";
-import { TripView } from "@/components/trip/trip-view";
+import { TripPlanner } from "@/components/planner/trip-planner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata: Metadata = { title: "Your trip", robots: { index: false } };
 
 export default function TripPage({ params }: PageProps<"/trips/[id]">) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
+    <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
       <Suspense fallback={<TripSkeleton />}>
         <TripContent params={params} />
       </Suspense>
@@ -47,6 +47,9 @@ async function TripContent({ params }: { params: PageProps<"/trips/[id]">["param
             tripStatus: trip.status,
             job: latestJob
               ? {
+                  id: latestJob.id,
+                  kind: latestJob.kind,
+                  params: null,
                   status: latestJob.status,
                   step: latestJob.step,
                   progress: latestJob.progress,
@@ -59,5 +62,5 @@ async function TripContent({ params }: { params: PageProps<"/trips/[id]">["param
       </div>
     );
   }
-  return <TripView detail={detail} />;
+  return <TripPlanner detail={detail} />;
 }

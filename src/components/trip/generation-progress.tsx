@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, LoaderCircleIcon, RotateCwIcon } from "lucide-react";
-import type { ProgressEvent } from "@/app/api/trips/[id]/events/route";
+import type { ProgressEvent } from "@/lib/progress-event";
 import { retryGenerationAction } from "@/server/actions/trips";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";

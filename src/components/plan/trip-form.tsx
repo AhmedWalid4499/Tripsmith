@@ -402,7 +402,7 @@ export function TripForm({ defaults, isGuest }: { defaults: TripFormDefaults; is
                     onValueChange={(v) => set("budgetCurrency", v as DisplayCurrency)}
                   >
                     <SelectTrigger className="w-28" aria-label="Budget currency">
-                      <SelectValue />
+                      <SelectValue>{values.budgetCurrency}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {DISPLAY_CURRENCIES.map((c) => (
