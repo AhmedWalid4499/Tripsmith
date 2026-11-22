@@ -20,7 +20,7 @@ const EnvSchema = z.object({
   // Anthropic
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
-  /** "mock" uses recorded fixtures instead of calling the API (tests, local dev without a key). */
+  /** "mock" builds plans from curated sample data instead of calling the API (tests, local dev without a key). */
   LLM_MODE: z.enum(["live", "mock"]).default("live"),
 
   // Providers: "mock" | "llm" now; real providers plug in later behind these flags.
