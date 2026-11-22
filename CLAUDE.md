@@ -9,8 +9,8 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 | Phase                     | Scope                                                                        | State |
 | ------------------------- | ---------------------------------------------------------------------------- | ----- |
 | 1. Foundation             | Scaffold, Tailwind/shadcn, Prisma schema + migration, Auth.js, layout        | Done  |
-| 2. Trip form + generation | Multi-step form, prompts + Zod, mock providers, pg-boss worker, SSE progress | Next  |
-| 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        |       |
+| 2. Trip form + generation | Multi-step form, prompts + Zod, mock providers, pg-boss worker, SSE progress | Done  |
+| 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        | Next  |
 | 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        |       |
 | 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               |       |
 
@@ -23,7 +23,8 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 - **Anthropic SDK** for generation, model from `ANTHROPIC_MODEL` (default `claude-opus-5-5`). Structured JSON output validated with **Zod**, never regex parsing.
 - **pg-boss** for background jobs (Postgres-backed, no Redis). Separate `worker` service in production.
 - Deploy target: **Railway** (web + worker + Postgres).
-- Package manager: **pnpm**. Node ≥ 22.
+- Package manager: **pnpm**. Node ≥ 22. The package is **ESM** (`"type": "module"`): the generated Prisma client uses `import.meta`, and the worker uses top-level `await`.
+- **Vitest** for unit tests (`tests/unit/`).
 
 ## Commands
 
@@ -38,9 +39,17 @@ pnpm db:migrate          # create/apply a migration in dev (prisma migrate dev)
 pnpm db:deploy           # apply migrations in prod (prisma migrate deploy)
 pnpm db:generate         # regenerate the Prisma client (run after schema edits)
 pnpm db:studio           # Prisma Studio
+pnpm worker              # generation worker (pg-boss consumer)
+pnpm test                # Vitest unit tests
+pnpm tsx-server <file>   # run a TS script with server-only modules, e.g.
+pnpm tsx-server scripts/smoke-generate.ts "Rome and Florence" 6 US   # generate a trip in-process and print it
 ```
 
+`prisma migrate dev` refuses to run in non-interactive shells (agents, CI). In that case write the migration SQL by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`, run `pnpm db:deploy`, then check for drift with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` (it should print an empty migration).
+
 Local Postgres: `DATABASE_URL="postgresql://tripsmith:tripsmith@localhost:5432/tripsmith?schema=public"`. Copy `.env.example` to `.env` and fill in `AUTH_SECRET`. Without `AUTH_RESEND_KEY`, magic links are printed to the server console.
+
+**Sample mode** (no API key needed): set `LLM_MODE="mock"` and `RUN_WORKER_IN_WEB="true"`, then `pnpm dev`. Plans come from curated data for Tokyo, Kyoto, Paris, Rome, Florence, Barcelona, London, Istanbul, Dubai and Bangkok (`src/server/providers/mock/data/`). Other destinations fail with a clear message. `MOCK_PLANNER_DELAY_MS` adds fake latency so you can see the live progress UI.
 
 ## Layout
 
@@ -50,7 +59,13 @@ src/app/                routes (App Router)
 src/components/ui/      shadcn primitives (don't put app logic here)
 src/components/<area>/  feature components (layout, landing, auth, account, trips, planner, share)
 src/server/             server-only code: db, env, auth, session (DAL), actions/, generation/, providers/, jobs/
-src/lib/                isomorphic helpers: money/, countries, dates, utils
+src/lib/                isomorphic helpers: money/, budget, checklist, trip-input (shared form/server schemas), visa/, countries, dates
+src/server/generation/  planner (llm-planner + mock-planner), prompts, Zod schemas, orchestrator (runFullPlan, planDay), progress
+src/server/providers/   provider interfaces (types.ts), mock/ (curated data), llm/ (estimates), registry.ts
+src/server/jobs/        pg-boss queue, worker, LISTEN/NOTIFY listener for SSE
+src/worker/index.ts     worker entrypoint (Railway "worker" service)
+scripts/                dev scripts (smoke-generate.ts)
+tests/unit/             Vitest
 src/generated/prisma/   generated Prisma client (git-ignored)
 ```
 
@@ -67,7 +82,9 @@ src/generated/prisma/   generated Prisma client (git-ignored)
 
 - Server Actions are public endpoints: re-check the session in every action (`getCurrentUser()`), never trust IDs from the client.
 - Inside Server Actions, call Auth.js `signIn(..., { redirect: false })` and then `redirect()` yourself. Auth.js's own redirect goes via `/api/auth/verify-request`, which the client router can't follow from an action.
-- Guests can create one trip without an account (cookie token, hashed in `Trip.guestTokenHash`). Unclaimed guest trips expire after `GUEST_TRIP_TTL_DAYS`.
+- Guests can create one trip without an account (cookie `ts_guest`, SHA-256 hash stored in `Trip.guestTokenHash`). Unclaimed guest trips expire after `GUEST_TRIP_TTL_DAYS` (cleanup job lands in Phase 5).
+- On sign-in, the Auth.js `signIn` event calls `claimGuestTrips()`, which moves the guest's trips onto the account. It is imported lazily to avoid an auth ↔ session import cycle.
+- Trip access goes through `src/server/trip-access.ts` (`findOwnedTrip`, `canEditTrip`). Pages and route handlers return 404, never 403, for trips the viewer doesn't own.
 
 ### Money
 
@@ -80,15 +97,25 @@ src/generated/prisma/   generated Prisma client (git-ignored)
 
 - `VisaInfo.officialUrl` comes **only** from the curated table (`src/lib/visa/official-sources.ts`), never from model output, because models invent plausible-looking URLs.
 - Model-derived visa info is `confidence: AI_ESTIMATE` and always shown as unverified, with the "verify before you travel" disclaimer.
+- Curated entries (`MockVisaProvider`) are `confidence: CURATED`, shown as "Curated summary, last reviewed <date>", still with the disclaimer. Review both the curated pairs and the official-sources table regularly; rules and portals change.
 
 ### Providers
 
-- Live data sits behind interfaces: `FlightProvider`, `HotelProvider`, `ActivityProvider`, `VisaProvider`, `WeatherProvider`, `FxProvider` (`src/server/providers/`). Each has `Mock*` and `LLMEstimate*` implementations, selected by `*_PROVIDER` env flags. Add real APIs as new implementations behind those flags.
+- Live data sits behind interfaces: `FlightProvider`, `HotelProvider`, `ActivityProvider`, `VisaProvider`, `WeatherProvider`, `FxProvider` (`src/server/providers/types.ts`). Each has `Mock*` and `LLMEstimate*` implementations, selected by `*_PROVIDER` env flags. Add real APIs as new implementations behind those flags.
+- `*_PROVIDER="mock"` means: curated data first, then the LLM estimate if the sample has nothing. `"llm"` means LLM estimate only. FX has no LLM fallback (rates must come from data).
+- Mock providers return `null` when they don't know a place; the registry then tries the next provider.
+- In `LLM_MODE=mock`, `LLMEstimate*` providers use simple heuristics and never call the API.
 
 ### Generation
 
 - Never run generation inside a web request. Enqueue a pg-boss job. The worker writes `GenerationJob` progress, and the UI streams it via SSE.
-- Generation is chunked: one outline call, then one call per day (also used for "regenerate day"). Every model response is parsed with Zod. Log token usage to `LlmUsage`.
+- Generation is chunked: one outline call, then one call per day. `planDay(tripId, dayNumber, …)` reads its context from the database and keeps locked items, so "regenerate this day" reuses it.
+- `generateStructured()` (`src/server/llm/client.ts`) is the only way to call the model: streaming, structured output built from the Zod schema, `stop_reason` checked (refusal / max_tokens) **before** parsing, Zod validation, one retry on invalid output, token usage logged to `LlmUsage`. For models that support it, the server-side refusal fallback (`fallbacks: "default"`) is enabled.
+- Model output schemas use `.nullable()` rather than `.optional()`. The SDK moves constraints the API doesn't support (patterns, numeric bounds, `minItems` > 1, `maxItems`) into descriptions, and Zod enforces them after parsing. Business rules (nights summing to length − 1, day count) are fixed in code (`normalizeOutline`), not trusted from the model.
+- Model output never supplies URLs. Prompts forbid them, and visa links come from the curated table.
+- `runFullPlan` never throws: failures are recorded on `GenerationJob.error` (user-friendly text) and the trip goes to `FAILED`, with a "Try again" action. A retry starts clean.
+- Progress: `reportProgress()` updates the job and calls `pg_notify('trip_progress', tripId)`. `/api/trips/[id]/events` (SSE) listens through one shared `LISTEN` connection per process and polls every 4 s as a fallback.
+- The web app only _sends_ jobs (`getBoss("sender")`, no maintenance). The worker (`pnpm worker`, or in-process with `RUN_WORKER_IN_WEB=true`) consumes them. Server-only modules load outside Next.js through `node --conditions=react-server`.
 
 ### UI and accessibility
 

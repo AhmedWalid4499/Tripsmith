@@ -15,4 +15,14 @@ pnpm dev                      # http://localhost:3000
 
 Sign in with any email. In development, the magic link is printed in the terminal running `pnpm dev`.
 
+### Planning trips locally
+
+- **Without an API key (sample mode):** set `LLM_MODE="mock"` and `RUN_WORKER_IN_WEB="true"` in `.env`. Plans come from curated data for Tokyo, Kyoto, Paris, Rome, Florence, Barcelona, London, Istanbul, Dubai and Bangkok.
+- **With Claude:** set `ANTHROPIC_API_KEY` and `LLM_MODE="live"`.
+- Generation runs in a background worker. Either set `RUN_WORKER_IN_WEB="true"`, or run `pnpm worker` in a second terminal.
+
+```bash
+pnpm test                     # unit tests
+```
+
 See [`CLAUDE.md`](./CLAUDE.md) for the stack, project layout, commands and conventions.
