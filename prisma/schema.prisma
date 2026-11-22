@@ -1,0 +1,456 @@
+// Tripsmith data model.
+// Conventions:
+// - Money is stored as integer minor units (`*Minor`) next to an ISO 4217 `currency` code.
+//   Source prices can be in any local currency (JPY, THB, ...); display currencies are limited to `Currency`.
+// - Every price carries `priceSource` (ESTIMATE | LIVE) and `priceCheckedAt`.
+// - Country codes are ISO 3166-1 alpha-2 (e.g. "EG", "JP").
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+/// Currencies a user can choose to display prices in.
+enum Currency {
+  EGP
+  USD
+  EUR
+}
+
+enum TravelStyle {
+  BUDGET
+  MID
+  LUXURY
+}
+
+enum TripStatus {
+  DRAFT
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
+enum PriceSource {
+  ESTIMATE
+  LIVE
+}
+
+enum ItemType {
+  ACTIVITY
+  MEAL
+  TRANSPORT
+  HOTEL
+}
+
+enum TimeSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum VisaRequirement {
+  NOT_REQUIRED
+  VISA_ON_ARRIVAL
+  E_VISA
+  VISA_REQUIRED
+  UNKNOWN
+}
+
+/// VERIFIED_SOURCE: from curated data with an official link. AI_ESTIMATE: model output, never presented as confirmed.
+enum VisaConfidence {
+  VERIFIED_SOURCE
+  AI_ESTIMATE
+}
+
+enum ChecklistCategory {
+  VISA
+  BOOKINGS
+  INSURANCE
+  CONNECTIVITY
+  MONEY
+  HEALTH
+  PACKING
+  OTHER
+}
+
+enum BudgetCategory {
+  FLIGHTS
+  HOTELS
+  ACTIVITIES
+  FOOD
+  LOCAL_TRANSPORT
+  VISA
+  BUFFER
+  OTHER
+}
+
+enum JobKind {
+  FULL_PLAN
+  REGENERATE_DAY
+  SWAP_ACTIVITY
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+// ───────────────────────────── Auth.js ─────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  name            String?
+  email           String?   @unique
+  emailVerified   DateTime?
+  image           String?
+  displayCurrency Currency  @default(USD)
+  homeCity        String?
+  /// ISO 3166-1 alpha-2 passport nationality, used to prefill the trip form.
+  nationality     String?   @db.Char(2)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  trips    Trip[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ───────────────────────────── Trips ─────────────────────────────
+
+model Trip {
+  id               String      @id @default(cuid())
+  userId           String?
+  /// SHA-256 of the guest cookie token for trips created without an account.
+  guestTokenHash   String?
+  title            String
+  /// What the user typed, e.g. "Japan: Tokyo, Kyoto". Empty when surpriseMe is true.
+  destinationQuery String
+  surpriseMe       Boolean     @default(false)
+  /// Resolved ISO alpha-2 country codes, filled in by generation.
+  countries        String[]
+  departureCity    String
+  startDate        DateTime?   @db.Date
+  endDate          DateTime?   @db.Date
+  lengthDays       Int
+  travellers       Int
+  budgetMinor      Int
+  budgetCurrency   Currency
+  displayCurrency  Currency
+  style            TravelStyle
+  interests        String[]
+  /// ISO alpha-2 passport nationality.
+  nationality      String      @db.Char(2)
+  status           TripStatus  @default(DRAFT)
+  /// Currency, tipping, safety, areas, transport, weather. Shape validated by Zod (`PracticalInfoSchema`).
+  practicalInfo    Json?
+  shareSlug        String?     @unique
+  isPublic         Boolean     @default(false)
+  fxSnapshotId     String?
+  generatedAt      DateTime?
+  /// Unclaimed guest trips are deleted after this date.
+  expiresAt        DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  user        User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fxSnapshot  FxRateSnapshot? @relation(fields: [fxSnapshotId], references: [id])
+  stops       TripStop[]
+  days        TripDay[]
+  hotels      HotelOption[]
+  flights     FlightOption[]
+  visas       VisaInfo[]
+  checklist   ChecklistItem[]
+  budgetLines BudgetLine[]
+  jobs        GenerationJob[]
+  llmUsage    LlmUsage[]
+
+  @@index([userId, createdAt])
+  @@index([guestTokenHash])
+  @@index([expiresAt])
+}
+
+/// One city/base in a (possibly multi-city) trip.
+model TripStop {
+  id        String  @id @default(cuid())
+  tripId    String
+  order     Int
+  city      String
+  country   String  @db.Char(2)
+  nights    Int
+  summary   String?
+  lat       Float?
+  lng       Float?
+
+  trip   Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  days   TripDay[]
+  hotels HotelOption[]
+
+  @@unique([tripId, order])
+}
+
+model TripDay {
+  id        String    @id @default(cuid())
+  tripId    String
+  stopId    String?
+  dayNumber Int
+  date      DateTime? @db.Date
+  title     String
+  summary   String?
+
+  trip  Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  stop  TripStop?       @relation(fields: [stopId], references: [id], onDelete: SetNull)
+  items ItineraryItem[]
+
+  @@unique([tripId, dayNumber])
+}
+
+model ItineraryItem {
+  id                String      @id @default(cuid())
+  dayId             String
+  order             Int
+  type              ItemType
+  slot              TimeSlot
+  /// Local time "HH:MM", optional.
+  startTime         String?
+  durationMin       Int?
+  /// Estimated travel time from the previous stop of the day.
+  travelMinFromPrev Int?
+  title             String
+  description       String?
+  location          String?
+  lat               Float?
+  lng               Float?
+  /// Cost for the whole party, in `currency` minor units.
+  costMinor         Int         @default(0)
+  currency          String      @db.Char(3)
+  priceSource       PriceSource @default(ESTIMATE)
+  priceCheckedAt    DateTime    @default(now())
+  bookingUrl        String?
+  notes             String?
+  /// Locked items are kept when the day is regenerated.
+  locked            Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  day TripDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  @@index([dayId, order])
+}
+
+model HotelOption {
+  id             String      @id @default(cuid())
+  tripId         String
+  stopId         String
+  tier           TravelStyle
+  name           String
+  area           String
+  description    String?
+  nightlyMinor   Int
+  currency       String      @db.Char(3)
+  priceSource    PriceSource @default(ESTIMATE)
+  priceCheckedAt DateTime    @default(now())
+  rating         Float?
+  url            String?
+  selected       Boolean     @default(false)
+
+  trip Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  stop TripStop @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, stopId])
+}
+
+model FlightOption {
+  id             String      @id @default(cuid())
+  tripId         String
+  fromCity       String
+  toCity         String
+  roundTrip      Boolean     @default(true)
+  airline        String?
+  stops          Int?
+  durationMin    Int?
+  /// Price per traveller.
+  priceMinor     Int
+  currency       String      @db.Char(3)
+  priceSource    PriceSource @default(ESTIMATE)
+  priceCheckedAt DateTime    @default(now())
+  notes          String?
+  selected       Boolean     @default(false)
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+}
+
+/// Visa requirements for one destination country. High-stakes: always shown with the official link and disclaimer.
+model VisaInfo {
+  id                 String          @id @default(cuid())
+  tripId             String
+  country            String          @db.Char(2)
+  nationality        String          @db.Char(2)
+  requirement        VisaRequirement
+  visaType           String?
+  costMinor          Int?
+  currency           String?         @db.Char(3)
+  processingTime     String?
+  maxStayDays        Int?
+  documents          String[]
+  /// Only ever set from curated data (lib/visa/official-sources.ts), never from model output.
+  officialUrl        String?
+  officialSourceName String?
+  confidence         VisaConfidence
+  notes              String?
+  checkedAt          DateTime        @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, country])
+}
+
+model ChecklistItem {
+  id                  String            @id @default(cuid())
+  tripId              String
+  order               Int
+  category            ChecklistCategory
+  title               String
+  description         String?
+  /// Days before departure the task should be done by; dueDate is derived from it when the trip has dates.
+  daysBeforeDeparture Int?
+  dueDate             DateTime?         @db.Date
+  link                String?
+  done                Boolean           @default(false)
+  doneAt              DateTime?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, order])
+}
+
+/// Manual budget lines and the buffer. Category totals for flights/hotels/activities are always computed, never stored.
+model BudgetLine {
+  id          String         @id @default(cuid())
+  tripId      String
+  category    BudgetCategory
+  label       String
+  amountMinor Int
+  currency    String         @db.Char(3)
+  priceSource PriceSource    @default(ESTIMATE)
+  createdAt   DateTime       @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+}
+
+// ───────────────────────────── Infrastructure ─────────────────────────────
+
+model GenerationJob {
+  id         String    @id @default(cuid())
+  tripId     String
+  kind       JobKind
+  status     JobStatus @default(QUEUED)
+  /// Machine-readable step, e.g. "outline", "day:3", "providers", "budget".
+  step       String?
+  /// 0–100
+  progress   Int       @default(0)
+  /// Human-readable progress, e.g. "Building day 3…"
+  message    String?
+  error      String?
+  params     Json?
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  trip     Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  llmUsage LlmUsage[]
+
+  @@index([tripId, createdAt])
+}
+
+model LlmUsage {
+  id               String   @id @default(cuid())
+  tripId           String?
+  jobId            String?
+  userId           String?
+  model            String
+  /// e.g. "outline", "day", "visa-estimate"
+  purpose          String
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  trip Trip?          @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  job  GenerationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([tripId])
+  @@index([userId, createdAt])
+}
+
+model FxRateSnapshot {
+  id          String      @id @default(cuid())
+  /// Rates are "units of currency per 1 USD".
+  base        String      @default("USD") @db.Char(3)
+  rates       Json
+  provider    String
+  priceSource PriceSource
+  fetchedAt   DateTime    @default(now())
+
+  trips Trip[]
+
+  @@index([fetchedAt])
+}
+
+/// Token-bucket rate limiter state, keyed like "gen:user:<id>" or "gen:ip:<ip>".
+model RateLimitBucket {
+  key       String   @id
+  tokens    Float
+  updatedAt DateTime
+}
