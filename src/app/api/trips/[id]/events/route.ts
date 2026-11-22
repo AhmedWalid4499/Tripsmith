@@ -1,17 +1,7 @@
+import { isJobActive, type ProgressEvent } from "@/lib/progress-event";
 import { db } from "@/server/db";
 import { subscribeToTrip } from "@/server/jobs/listener";
 import { findOwnedTrip } from "@/server/trip-access";
-
-export type ProgressEvent = {
-  tripStatus: "DRAFT" | "QUEUED" | "GENERATING" | "READY" | "FAILED";
-  job: {
-    status: string;
-    step: string | null;
-    progress: number;
-    message: string | null;
-    error: string | null;
-  } | null;
-};
 
 async function snapshot(tripId: string): Promise<ProgressEvent | null> {
   const trip = await db.trip.findUnique({
@@ -21,12 +11,27 @@ async function snapshot(tripId: string): Promise<ProgressEvent | null> {
       jobs: {
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { status: true, step: true, progress: true, message: true, error: true },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          params: true,
+          step: true,
+          progress: true,
+          message: true,
+          error: true,
+        },
       },
     },
   });
   if (!trip) return null;
-  return { tripStatus: trip.status, job: trip.jobs[0] ?? null };
+  const job = trip.jobs[0];
+  return {
+    tripStatus: trip.status,
+    job: job
+      ? { ...job, params: (job.params ?? null) as NonNullable<ProgressEvent["job"]>["params"] }
+      : null,
+  };
 }
 
 /** Server-Sent Events stream of generation progress for one trip. */
@@ -60,7 +65,12 @@ export async function GET(request: Request, ctx: RouteContext<"/api/trips/[id]/e
             last = data;
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }
-          if (event.tripStatus === "READY" || event.tripStatus === "FAILED") close();
+          // Done when the trip is settled and no edit is still running on it.
+          if (
+            (event.tripStatus === "READY" || event.tripStatus === "FAILED") &&
+            !isJobActive(event)
+          )
+            close();
         } catch (error) {
           console.error("[sse] snapshot failed", error);
         }

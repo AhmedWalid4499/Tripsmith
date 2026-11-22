@@ -1,4 +1,5 @@
 import { countryName } from "@/lib/countries";
+import type { DayItem } from "./schemas";
 import type { DayContext, TripBrief } from "./types";
 
 /** Stable system prompt: identical across calls so it's served from the prompt cache. */
@@ -113,4 +114,24 @@ export function dayPrompt(d: DayContext): string {
 - costTotalMajor is for all ${d.brief.travellers} traveller(s) together, in ${d.stop.currency}. Free things cost 0.
 - Give coordinates (lat/lng) for each place when you know them.`);
   return lines.join("\n\n");
+}
+
+export function alternativePrompt(d: DayContext, replace: DayItem, otherItems: DayItem[]): string {
+  const kind = replace.type === "MEAL" ? "place to eat" : "activity";
+  const schedule = otherItems
+    .map((i) => `- ${i.startTime ?? i.slot} ${i.title} (${i.location})`)
+    .join("\n");
+  return [
+    `<trip>\n${briefLines(d.brief)}\n</trip>`,
+    `Day ${d.dayNumber} in ${d.stop.city}, ${countryName(d.stop.country)} (local currency ${d.stop.currency}).${d.date ? ` Date: ${fmtDate(d.date)}.` : ""}`,
+    d.weatherSummary ? `Typical weather: ${d.weatherSummary}` : "",
+    `The rest of the day:\n${schedule || "(nothing else planned)"}`,
+    `The traveller wants to replace this ${kind}: "${replace.title}" (${replace.slot.toLowerCase()}, starting ${replace.startTime ?? "flexibly"}, about ${replace.durationMin} minutes, ${replace.location}).`,
+    d.alreadyPlanned.length
+      ? `Already planned on other days (don't suggest these): ${d.alreadyPlanned.join("; ")}.`
+      : "",
+    `Suggest exactly one different ${kind} that fits the same time slot, takes roughly the same time, suits their interests and travel style, and is near the rest of the day where possible. Use type "${replace.type}" and slot "${replace.slot}". costTotalMajor is for all ${d.brief.travellers} traveller(s), in ${d.stop.currency}.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

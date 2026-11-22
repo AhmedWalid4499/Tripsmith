@@ -24,6 +24,15 @@ function simulateLatency(multiplier = 1) {
   return ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 }
 
+export class NoAlternativeError extends Error {
+  constructor(city: string) {
+    super(
+      `Sample mode has no other ideas left for ${city}. Add an ANTHROPIC_API_KEY for more suggestions.`,
+    );
+    this.name = "NoAlternativeError";
+  }
+}
+
 export class MockDestinationError extends Error {
   constructor(query: string) {
     const known = CITY_SAMPLES.map((c) => c.city).join(", ");
@@ -508,6 +517,57 @@ export const mockPlanner: Planner = {
       items: [...d.lockedItems, ...items].sort((a, b) =>
         (a.startTime ?? "").localeCompare(b.startTime ?? ""),
       ),
+    };
+  },
+
+  async alternative(d: DayContext, replace: DayItem, rest: DayItem[]): Promise<DayItem> {
+    await simulateLatency();
+    const taken = new Set(
+      [...d.alreadyPlanned, ...rest.map((i) => i.title), replace.title].map(normalizePlace),
+    );
+    const travellers = d.brief.travellers;
+    if (replace.type === "MEAL") {
+      const meal = (d.ideas?.meals ?? [])
+        .filter((m) => !taken.has(normalizePlace(m.name)))
+        .sort((a, b) => Number(b.slot === replace.slot) - Number(a.slot === replace.slot))[0];
+      if (!meal) throw new NoAlternativeError(d.stop.city);
+      return {
+        ...replace,
+        title: meal.name,
+        description: meal.description,
+        location: meal.area,
+        lat: meal.lat,
+        lng: meal.lng,
+        costTotalMajor: meal.costPerPersonMajor * travellers,
+        currency: meal.currency,
+        bookingTip: meal.tier === "LUXURY" ? "Reserve a table in advance." : null,
+        travelMinFromPrev: null,
+        travelModeFromPrev: null,
+      };
+    }
+    const wanted: ActivityIdea["bestSlot"] = replace.slot;
+    const activity = (d.ideas?.activities ?? [])
+      .filter((a) => !taken.has(normalizePlace(a.name)))
+      .sort(
+        (a, b) =>
+          Number(b.bestSlot === wanted || b.bestSlot === "ANY") -
+            Number(a.bestSlot === wanted || a.bestSlot === "ANY") ||
+          interestScore(b, d.brief.interests) - interestScore(a, d.brief.interests),
+      )[0];
+    if (!activity) throw new NoAlternativeError(d.stop.city);
+    return {
+      ...replace,
+      title: activity.name,
+      description: activity.description,
+      location: activity.area,
+      lat: activity.lat,
+      lng: activity.lng,
+      durationMin: activity.durationMin,
+      costTotalMajor: activity.costPerPersonMajor * travellers,
+      currency: activity.currency,
+      bookingTip: activity.bookingTip ?? null,
+      travelMinFromPrev: null,
+      travelModeFromPrev: null,
     };
   },
 };

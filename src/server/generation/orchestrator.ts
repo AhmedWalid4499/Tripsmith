@@ -11,7 +11,7 @@ import { env } from "@/server/env";
 import { LlmNotConfiguredError, LlmRefusalError } from "@/server/llm/client";
 import { getProviders, type Providers } from "@/server/providers/registry";
 import { llmPlanner } from "./llm-planner";
-import { MockDestinationError, mockPlanner } from "./mock-planner";
+import { MockDestinationError, mockPlanner, NoAlternativeError } from "./mock-planner";
 import { notifyTrip, reportProgress } from "./progress";
 import { isValidCurrency, normalizeOutline } from "./normalize";
 import type { DayItem } from "./schemas";
@@ -47,7 +47,7 @@ function briefFromTrip(trip: Prisma.TripGetPayload<object>): TripBrief {
   };
 }
 
-function toDayItem(i: Prisma.ItineraryItemGetPayload<object>): DayItem {
+export function toDayItem(i: Prisma.ItineraryItemGetPayload<object>): DayItem {
   return {
     type: i.type === "HOTEL" ? "ACTIVITY" : i.type,
     slot: i.slot,
@@ -66,17 +66,8 @@ function toDayItem(i: Prisma.ItineraryItemGetPayload<object>): DayItem {
   };
 }
 
-/**
- * Generate and save one day. Reads all context from the database, so it serves both the full
- * plan and "regenerate this day". Locked items are kept.
- */
-export async function planDay(
-  tripId: string,
-  dayNumber: number,
-  planner: Planner,
-  providers: Providers,
-  ctx: PlannerContext,
-) {
+/** Load everything the planner needs to know about one day of a saved trip. */
+export async function buildDayContext(tripId: string, dayNumber: number, providers: Providers) {
   const trip = await db.trip.findUniqueOrThrow({
     where: { id: tripId },
     include: {
@@ -135,7 +126,21 @@ export async function planDay(
     ideas: ideas?.value ?? null,
     lockedItems: day.items.filter((i) => i.locked).map(toDayItem),
   };
+  return { trip, day, dayCtx };
+}
 
+/**
+ * Generate and save one day. Reads all context from the database, so it serves both the full
+ * plan and "regenerate this day". Locked items are kept.
+ */
+export async function planDay(
+  tripId: string,
+  dayNumber: number,
+  planner: Planner,
+  providers: Providers,
+  ctx: PlannerContext,
+) {
+  const { day, dayCtx } = await buildDayContext(tripId, dayNumber, providers);
   const plan = await planner.day(dayCtx, ctx);
   const lockedTitles = new Set(dayCtx.lockedItems.map((i) => i.title));
   const fallbackCurrency = dayCtx.stop.currency;
@@ -178,8 +183,12 @@ export async function planDay(
   ]);
 }
 
-function friendlyError(error: unknown): string {
-  if (error instanceof MockDestinationError || error instanceof LlmNotConfiguredError)
+export function friendlyError(error: unknown): string {
+  if (
+    error instanceof MockDestinationError ||
+    error instanceof NoAlternativeError ||
+    error instanceof LlmNotConfiguredError
+  )
     return error.message;
   if (error instanceof LlmRefusalError)
     return "The planner couldn't create this trip. Try rewording the destination or adjusting the details.";

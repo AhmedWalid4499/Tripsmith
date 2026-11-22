@@ -53,4 +53,11 @@ export interface Planner {
   readonly name: string;
   outline(brief: TripBrief, ctx: PlannerContext): Promise<Outline>;
   day(day: DayContext, ctx: PlannerContext): Promise<DayPlan>;
+  /** One replacement for `replace` that fits the same slot of the same day. `rest` = the day's other items. */
+  alternative(
+    day: DayContext,
+    replace: DayItem,
+    rest: DayItem[],
+    ctx: PlannerContext,
+  ): Promise<DayItem>;
 }

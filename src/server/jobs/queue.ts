@@ -3,9 +3,12 @@ import { PgBoss } from "pg-boss";
 
 export const QUEUES = {
   fullPlan: "trip-full-plan",
+  /** Short planner edits (regenerate a day, swap an item), kept apart so they don't wait behind full plans. */
+  edit: "trip-edit",
 } as const;
 
 export type FullPlanJob = { jobId: string };
+export type EditJob = { jobId: string };
 
 type Role = "sender" | "worker";
 const instances = new Map<Role, Promise<PgBoss>>();
@@ -28,11 +31,16 @@ export function getBoss(role: Role = "sender"): Promise<PgBoss> {
       });
       boss.on("error", (error) => console.error(`[pg-boss:${role}]`, error));
       await boss.start();
+      // Jobs record their own failures and never throw, so retries only cover crashes.
       await boss.createQueue(QUEUES.fullPlan, {
-        // Generation records its own failures and never throws, so retries only cover crashes.
         retryLimit: 1,
         retryDelay: 30,
         expireInSeconds: 30 * 60,
+      });
+      await boss.createQueue(QUEUES.edit, {
+        retryLimit: 1,
+        retryDelay: 10,
+        expireInSeconds: 10 * 60,
       });
       return boss;
     })();
@@ -46,4 +54,9 @@ export function getBoss(role: Role = "sender"): Promise<PgBoss> {
 export async function enqueueFullPlan(jobId: string) {
   const boss = await getBoss("sender");
   await boss.send(QUEUES.fullPlan, { jobId } satisfies FullPlanJob, { singletonKey: jobId });
+}
+
+export async function enqueueEdit(jobId: string) {
+  const boss = await getBoss("sender");
+  await boss.send(QUEUES.edit, { jobId } satisfies EditJob, { singletonKey: jobId });
 }

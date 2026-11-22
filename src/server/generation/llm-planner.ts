@@ -1,7 +1,7 @@
 import "server-only";
 import { generateStructured } from "@/server/llm/client";
-import { dayPrompt, outlinePrompt, PLANNER_SYSTEM } from "./prompts";
-import { DayPlanSchema, OutlineSchema } from "./schemas";
+import { alternativePrompt, dayPrompt, outlinePrompt, PLANNER_SYSTEM } from "./prompts";
+import { DayItemSchema, DayPlanSchema, OutlineSchema } from "./schemas";
 import type { Planner } from "./types";
 
 export const llmPlanner: Planner = {
@@ -25,6 +25,17 @@ export const llmPlanner: Planner = {
       prompt: dayPrompt(day),
       effort: "medium",
       maxTokens: 16_000,
+      ctx,
+    });
+  },
+  alternative(day, replace, rest, ctx) {
+    return generateStructured({
+      purpose: "alternative",
+      schema: DayItemSchema,
+      system: PLANNER_SYSTEM,
+      prompt: alternativePrompt(day, replace, rest),
+      effort: "medium",
+      maxTokens: 4_000,
       ctx,
     });
   },

@@ -1,6 +1,7 @@
 import "server-only";
+import { runEditJob } from "@/server/generation/edits";
 import { runFullPlan } from "@/server/generation/orchestrator";
-import { getBoss, QUEUES, type FullPlanJob } from "./queue";
+import { getBoss, QUEUES, type EditJob, type FullPlanJob } from "./queue";
 
 /** Start consuming generation jobs. Used by the worker service, or in-process when RUN_WORKER_IN_WEB=true. */
 export async function startWorker() {
@@ -10,6 +11,11 @@ export async function startWorker() {
       await runFullPlan(job.data.jobId);
     }
   });
-  console.info(`[worker] listening on "${QUEUES.fullPlan}"`);
+  await boss.work<EditJob>(QUEUES.edit, { localConcurrency: 4 }, async (jobs) => {
+    for (const job of jobs) {
+      await runEditJob(job.data.jobId);
+    }
+  });
+  console.info(`[worker] listening on "${QUEUES.fullPlan}" and "${QUEUES.edit}"`);
   return boss;
 }
