@@ -49,6 +49,19 @@ function buildConfig(): NextAuthConfig {
       verifyRequest: "/signin/check-email",
       error: "/signin",
     },
+    events: {
+      // A guest who signs in keeps the trip they planned.
+      async signIn({ user }) {
+        if (!user.id) return;
+        try {
+          // Imported lazily: trip-access depends on the session helpers, which depend on this file.
+          const { claimGuestTrips } = await import("@/server/trip-access");
+          await claimGuestTrips(user.id);
+        } catch (error) {
+          console.error("[auth] failed to claim guest trips", error);
+        }
+      },
+    },
     callbacks: {
       session({ session, user }) {
         session.user.id = user.id;
