@@ -10,8 +10,8 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 | ------------------------- | ---------------------------------------------------------------------------- | ----- |
 | 1. Foundation             | Scaffold, Tailwind/shadcn, Prisma schema + migration, Auth.js, layout        | Done  |
 | 2. Trip form + generation | Multi-step form, prompts + Zod, mock providers, pg-boss worker, SSE progress | Done  |
-| 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        | Next  |
-| 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        |       |
+| 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        | Done  |
+| 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        | Next  |
 | 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               |       |
 
 ## Stack
@@ -62,7 +62,9 @@ src/server/             server-only code: db, env, auth, session (DAL), actions/
 src/lib/                isomorphic helpers: money/, budget, checklist, trip-input (shared form/server schemas), visa/, countries, dates
 src/server/generation/  planner (llm-planner + mock-planner), prompts, Zod schemas, orchestrator (runFullPlan, planDay), progress
 src/server/providers/   provider interfaces (types.ts), mock/ (curated data), llm/ (estimates), registry.ts
-src/server/jobs/        pg-boss queue, worker, LISTEN/NOTIFY listener for SSE
+src/server/jobs/        pg-boss queues (trip-full-plan, trip-edit), worker, LISTEN/NOTIFY listener for SSE
+src/server/planner/     resequenceDays (persist new item order + recalculated times)
+src/components/planner/ trip planner: tabs, itinerary editor (dnd-kit), panels, live job provider
 src/worker/index.ts     worker entrypoint (Railway "worker" service)
 scripts/                dev scripts (smoke-generate.ts)
 tests/unit/             Vitest
@@ -128,3 +130,14 @@ src/generated/prisma/   generated Prisma client (git-ignored)
 
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`).
 - Keep this file up to date when a decision changes.
+
+### Planner editing
+
+- `/trips/[id]` renders `TripPlanner`: server-rendered panels inside client tabs (`PlannerTabs`, selected tab in the URL hash). The itinerary editor and checklist are client components; stays, visa, budget and info are server components.
+- All edits are Server Actions in `src/server/actions/planner.ts`. Each one resolves the record through its trip and checks ownership (`findOwnedTrip`); unknown or foreign records get the same "not found" answer.
+- Cheap edits run inline: reorder or move items, remove, lock, choose a hotel, tick the checklist, switch display currency. Anything that needs the planner (regenerate a day, swap an item) is a `GenerationJob` (`REGENERATE_DAY` / `SWAP_ACTIVITY`) on the `trip-edit` queue, handled by `runEditJob`. Only one job runs per trip at a time; actions refuse with a "busy" message otherwise.
+- After any reorder, `resequenceDays()` rewrites order and times with the pure `retimeDay()` (`src/lib/retime.ts`): the day keeps its earliest start, travel info survives only where the neighbour is unchanged, and meals keep their booked time unless pushed later. The client runs the same function for instant feedback, so the UI doesn't jump after saving.
+- `TripLiveProvider` follows the active edit job over SSE. It locks editing while a job runs, marks the busy day or item, toasts the outcome and calls `router.refresh()`. The SSE stream closes only when the trip is settled **and** no job is active.
+- Drag and drop uses dnd-kit with a dedicated handle, `KeyboardSensor` and spoken announcements. Every drag action also has a menu equivalent ("Move to another day").
+- Budget totals are always recomputed from the plan on render (`computeBudget`). The budget chart follows the dataviz rules: a meter for total vs budget, ranked single-hue bars (≤ 24px, 4px rounded data-end), figures as text, hover/focus tooltips, and a semantic table.
+- Radix `SelectValue` renders empty until hydration; pass the label as children (`<SelectValue>{value}</SelectValue>`) for anything visible on first paint.
