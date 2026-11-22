@@ -63,9 +63,10 @@ enum VisaRequirement {
   UNKNOWN
 }
 
-/// VERIFIED_SOURCE: from curated data with an official link. AI_ESTIMATE: model output, never presented as confirmed.
+/// CURATED: summary from our curated table, linked to an official source (still "verify before you travel").
+/// AI_ESTIMATE: model output, never presented as confirmed.
 enum VisaConfidence {
-  VERIFIED_SOURCE
+  CURATED
   AI_ESTIMATE
 }
 
@@ -218,15 +219,15 @@ model Trip {
 
 /// One city/base in a (possibly multi-city) trip.
 model TripStop {
-  id        String  @id @default(cuid())
-  tripId    String
-  order     Int
-  city      String
-  country   String  @db.Char(2)
-  nights    Int
-  summary   String?
-  lat       Float?
-  lng       Float?
+  id      String  @id @default(cuid())
+  tripId  String
+  order   Int
+  city    String
+  country String  @db.Char(2)
+  nights  Int
+  summary String?
+  lat     Float?
+  lng     Float?
 
   trip   Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
   days   TripDay[]
@@ -252,32 +253,34 @@ model TripDay {
 }
 
 model ItineraryItem {
-  id                String      @id @default(cuid())
-  dayId             String
-  order             Int
-  type              ItemType
-  slot              TimeSlot
+  id                 String      @id @default(cuid())
+  dayId              String
+  order              Int
+  type               ItemType
+  slot               TimeSlot
   /// Local time "HH:MM", optional.
-  startTime         String?
-  durationMin       Int?
+  startTime          String?
+  durationMin        Int?
   /// Estimated travel time from the previous stop of the day.
-  travelMinFromPrev Int?
-  title             String
-  description       String?
-  location          String?
-  lat               Float?
-  lng               Float?
+  travelMinFromPrev  Int?
+  /// e.g. "12 min walk", "Metro line 1"
+  travelModeFromPrev String?
+  title              String
+  description        String?
+  location           String?
+  lat                Float?
+  lng                Float?
   /// Cost for the whole party, in `currency` minor units.
-  costMinor         Int         @default(0)
-  currency          String      @db.Char(3)
-  priceSource       PriceSource @default(ESTIMATE)
-  priceCheckedAt    DateTime    @default(now())
-  bookingUrl        String?
-  notes             String?
+  costMinor          Int         @default(0)
+  currency           String      @db.Char(3)
+  priceSource        PriceSource @default(ESTIMATE)
+  priceCheckedAt     DateTime    @default(now())
+  bookingUrl         String?
+  notes              String?
   /// Locked items are kept when the day is regenerated.
-  locked            Boolean     @default(false)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  locked             Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   day TripDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
 
