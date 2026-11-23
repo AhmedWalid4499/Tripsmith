@@ -11,8 +11,8 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 | 1. Foundation             | Scaffold, Tailwind/shadcn, Prisma schema + migration, Auth.js, layout        | Done  |
 | 2. Trip form + generation | Multi-step form, prompts + Zod, mock providers, pg-boss worker, SSE progress | Done  |
 | 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        | Done  |
-| 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        | Next  |
-| 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               |       |
+| 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        | Done  |
+| 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               | Next  |
 
 ## Stack
 
@@ -65,6 +65,9 @@ src/server/providers/   provider interfaces (types.ts), mock/ (curated data), ll
 src/server/jobs/        pg-boss queues (trip-full-plan, trip-edit), worker, LISTEN/NOTIFY listener for SSE
 src/server/planner/     resequenceDays (persist new item order + recalculated times)
 src/components/planner/ trip planner: tabs, itinerary editor (dnd-kit), panels, live job provider
+src/components/share/   shared view, share dialog, print button
+src/server/share.ts     public share gate (uncached) + cached shared content
+src/server/og.tsx       Open Graph image helpers (brand colours as hex, fonts from src/assets/fonts)
 src/worker/index.ts     worker entrypoint (Railway "worker" service)
 scripts/                dev scripts (smoke-generate.ts)
 tests/unit/             Vitest
@@ -141,3 +144,12 @@ src/generated/prisma/   generated Prisma client (git-ignored)
 - Drag and drop uses dnd-kit with a dedicated handle, `KeyboardSensor` and spoken announcements. Every drag action also has a menu equivalent ("Move to another day").
 - Budget totals are always recomputed from the plan on render (`computeBudget`). The budget chart follows the dataviz rules: a meter for total vs budget, ranked single-hue bars (≤ 24px, 4px rounded data-end), figures as text, hover/focus tooltips, and a semantic table.
 - Radix `SelectValue` renders empty until hydration; pass the label as children (`<SelectValue>{value}</SelectValue>`) for anything visible on first paint.
+
+### Sharing
+
+- A trip is public when `isPublic` is true and it has a `shareSlug`: a readable title prefix plus a 12-character random base62 token (`makeShareSlug`, `src/lib/share.ts`). Only the token matters for access. Only **signed-in owners** can share; guest trips expire, so they can't.
+- `/t/[slug]` access is checked by `findSharedTrip()` on **every** request, with no caching, so turning sharing off or replacing the link takes effect immediately on all instances. The content (`getSharedTripContent`) is `"use cache"` with `cacheTag("trip:<id>")` and `cacheLife("minutes")`. Planner and share Server Actions call `updateTag` for it. Worker edits (regenerate / swap) can't, so they appear when the cache lifetime runs out.
+- The shared view never includes passport nationality, visa details, the checklist, the owner's identity or guest tokens. Prices and the budget appear only if the owner ticks "Show prices" (`shareShowCosts`, off by default). Shared pages are `noindex, nofollow`.
+- "Create a new link" replaces the slug (the old link 404s). Turning sharing off keeps the slug, so turning it back on restores the same link.
+- Open Graph images: `src/app/t/[slug]/opengraph-image.tsx` (trip card) and `src/app/opengraph-image.tsx` (site card). A private or unknown link renders the generic card and never leaks trip details. Satori needs hex colours (`OG` in `src/server/og.tsx`) and `.woff` fonts (`src/assets/fonts/`, OFL).
+- Print: one `@media print` block in `globals.css`. It hides controls (`[data-slot=button]`, switches, select triggers, `[data-print="hide"]`), prints every planner tab on its own page, keeps list items together and prints external URLs. Mark a button that must survive on paper with `data-print="keep"` (e.g. the official visa link).
