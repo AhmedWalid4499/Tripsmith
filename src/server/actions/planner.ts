@@ -8,6 +8,7 @@ import type { EditJobParams } from "@/server/generation/edits";
 import { enqueueEdit } from "@/server/jobs/queue";
 import { resequenceDays } from "@/server/planner/resequence";
 import { findOwnedTrip } from "@/server/trip-access";
+import { checkGenerationLimit } from "@/server/rate-limit";
 import { tripCacheTag } from "@/server/share";
 
 export type ActionResult = { ok?: true; error?: string };
@@ -191,6 +192,8 @@ export async function regenerateDayAction(
   const day = await db.tripDay.findUnique({ where: { tripId_dayNumber: { tripId, dayNumber } } });
   if (!day) return NOT_FOUND;
   if (await hasActiveJob(tripId)) return BUSY;
+  const limited = await checkGenerationLimit("edit", trip.userId);
+  if (limited.error) return { error: limited.error };
   return queueEdit(tripId, "REGENERATE_DAY", { dayNumber }, `Waiting to rebuild day ${dayNumber}…`);
 }
 
@@ -201,6 +204,8 @@ export async function swapItemAction(itemId: string): Promise<ActionResult> {
   if (item.type !== "ACTIVITY" && item.type !== "MEAL")
     return { error: "Only activities and meals can be swapped." };
   if (await hasActiveJob(trip.id)) return BUSY;
+  const limited = await checkGenerationLimit("edit", trip.userId);
+  if (limited.error) return { error: limited.error };
   return queueEdit(
     trip.id,
     "SWAP_ACTIVITY",

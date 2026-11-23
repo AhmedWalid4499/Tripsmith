@@ -6,12 +6,13 @@ import { resolveDates, TripInputSchema, type TripInput } from "@/lib/trip-input"
 import { db } from "@/server/db";
 import { env } from "@/server/env";
 import { enqueueFullPlan } from "@/server/jobs/queue";
+import { checkGenerationLimit } from "@/server/rate-limit";
 import { getCurrentUser } from "@/server/session";
 import { ensureGuestTokenHash, findOwnedTrip } from "@/server/trip-access";
 
 export type CreateTripResult = {
   error?: string;
-  code?: "GUEST_LIMIT" | "INVALID" | "QUEUE";
+  code?: "GUEST_LIMIT" | "INVALID" | "QUEUE" | "RATE_LIMIT";
   fieldErrors?: Record<string, string>;
 };
 
@@ -41,6 +42,9 @@ export async function createTripAction(raw: TripInput): Promise<CreateTripResult
     }
     expiresAt = new Date(Date.now() + env().GUEST_TRIP_TTL_DAYS * 86_400_000);
   }
+
+  const limited = await checkGenerationLimit("plan", user?.id ?? null);
+  if (limited.error) return { code: "RATE_LIMIT", error: limited.error };
 
   const { startDate, endDate, lengthDays } = resolveDates(input);
   const trip = await db.trip.create({
@@ -89,6 +93,8 @@ export async function retryGenerationAction(tripId: string): Promise<{ error?: s
     where: { tripId, status: { in: ["QUEUED", "RUNNING"] } },
   });
   if (running > 0) return {};
+  const limited = await checkGenerationLimit("plan", owned.trip.userId);
+  if (limited.error) return { error: limited.error };
   const job = await db.generationJob.create({
     data: { tripId, kind: "FULL_PLAN", message: "Waiting for a planner…" },
   });

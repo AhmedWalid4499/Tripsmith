@@ -11,7 +11,8 @@ const EnvSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
 
   // Auth.js
-  AUTH_SECRET: z.string().min(16),
+  /** Required by the web app (checked in auth.ts); the worker doesn't need it. */
+  AUTH_SECRET: z.string().min(16).optional(),
   AUTH_GOOGLE_ID: z.string().optional(),
   AUTH_GOOGLE_SECRET: z.string().optional(),
   AUTH_RESEND_KEY: z.string().optional(),
@@ -38,6 +39,8 @@ const EnvSchema = z.object({
   // Rate limits
   GENERATIONS_PER_DAY_USER: z.coerce.number().int().positive().default(10),
   GENERATIONS_PER_DAY_IP: z.coerce.number().int().positive().default(5),
+  EDITS_PER_DAY_USER: z.coerce.number().int().positive().default(60),
+  EDITS_PER_DAY_IP: z.coerce.number().int().positive().default(100),
   GUEST_TRIP_TTL_DAYS: z.coerce.number().int().positive().default(7),
 });
 
