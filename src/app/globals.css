@@ -124,3 +124,55 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Print: shared trips and the planner print as clean, paper-friendly documents ── */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  :root {
+    --background: #ffffff;
+    --card: #ffffff;
+    --sea-wash: #ffffff;
+  }
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    font-size: 11pt;
+  }
+  /* Controls don't belong on paper. */
+  [data-slot="tabs-list"],
+  [data-slot="button"]:not([data-print="keep"]),
+  [data-slot="switch"],
+  [data-slot="select-trigger"],
+  [data-print="hide"] {
+    display: none !important;
+  }
+  /* Print every planner tab, each starting on a new page. */
+  [data-slot="tabs-content"][data-state="inactive"] {
+    display: block !important;
+  }
+  [data-slot="tabs-content"] + [data-slot="tabs-content"] {
+    break-before: page;
+  }
+  [data-slot="card"],
+  section,
+  li {
+    box-shadow: none !important;
+  }
+  li {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  /* Show where external links go. */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #444;
+    word-break: break-all;
+  }
+}

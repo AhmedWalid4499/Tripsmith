@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarIcon, MapIcon, PlusIcon, UsersIcon } from "lucide-react";
+import { CalendarIcon, Link2Icon, MapIcon, PlusIcon, UsersIcon } from "lucide-react";
 import { requireUser } from "@/server/session";
 import { db } from "@/server/db";
 import { countryFlag } from "@/lib/countries";
 import { formatDateRange } from "@/lib/dates";
 import { TripStatusBadge } from "@/components/trips/trip-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,6 +67,7 @@ async function TripList() {
       lengthDays: true,
       travellers: true,
       status: true,
+      isPublic: true,
     },
   });
 
@@ -105,7 +107,15 @@ async function TripList() {
                   ) : null}
                   {trip.title}
                 </h2>
-                <TripStatusBadge status={trip.status} />
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <TripStatusBadge status={trip.status} />
+                  {trip.isPublic ? (
+                    <Badge variant="outline">
+                      <Link2Icon aria-hidden="true" />
+                      Shared
+                    </Badge>
+                  ) : null}
+                </span>
               </div>
               <dl className="text-muted-foreground space-y-1.5 text-sm">
                 <div className="flex items-center gap-2">

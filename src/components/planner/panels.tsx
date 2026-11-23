@@ -398,7 +398,7 @@ export function VisaPanel({ detail }: { detail: TripDetail }) {
               ) : null}
               {v.notes ? <p>{v.notes}</p> : null}
               {v.officialUrl ? (
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="outline" size="sm" data-print="keep">
                   <a href={v.officialUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLinkIcon />
                     {v.officialSourceName ?? "Official source"}

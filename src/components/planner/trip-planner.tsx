@@ -8,6 +8,8 @@ import type { ProgressEvent } from "@/lib/progress-event";
 import type { TripDetail } from "@/server/trips";
 import { ChecklistPanel } from "@/components/planner/checklist-panel";
 import { CurrencySwitch } from "@/components/planner/currency-switch";
+import { PrintButton } from "@/components/share/print-button";
+import { ShareDialog } from "@/components/share/share-dialog";
 import { ItineraryEditor, type EditorDay } from "@/components/planner/itinerary-editor";
 import { BudgetPanel, InfoPanel, StaysPanel, VisaPanel } from "@/components/planner/panels";
 import { PlannerTabs } from "@/components/planner/planner-tabs";
@@ -74,7 +76,19 @@ export function TripPlanner({ detail }: { detail: TripDetail }) {
             </p>
             <h1 className="mt-2 text-3xl font-semibold text-balance sm:text-4xl">{trip.title}</h1>
           </div>
-          <CurrencySwitch tripId={trip.id} value={trip.displayCurrency} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ShareDialog
+              tripId={trip.id}
+              isGuest={isGuestTrip}
+              initial={{
+                isPublic: trip.isPublic,
+                slug: trip.shareSlug,
+                showCosts: trip.shareShowCosts,
+              }}
+            />
+            <PrintButton label="Print" />
+            <CurrencySwitch tripId={trip.id} value={trip.displayCurrency} />
+          </div>
         </div>
         <ul className="text-muted-foreground mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
           <li className="flex items-center gap-1.5">

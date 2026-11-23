@@ -284,7 +284,7 @@ export function ItineraryEditor({
 
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground flex items-start gap-2 text-sm">
+      <p data-print="hide" className="text-muted-foreground flex items-start gap-2 text-sm">
         <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         Drag items by the handle to reorder them or move them to another day (with a keyboard: Tab
         to a handle, then Space). Times update to fit. Lock an item to keep it when you regenerate
