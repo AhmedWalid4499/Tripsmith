@@ -193,6 +193,9 @@ model Trip {
   practicalInfo    Json?
   shareSlug        String?     @unique
   isPublic         Boolean     @default(false)
+  /// Shared view shows prices and the budget only when the owner opts in.
+  shareShowCosts   Boolean     @default(false)
+  sharedAt         DateTime?
   fxSnapshotId     String?
   generatedAt      DateTime?
   /// Unclaimed guest trips are deleted after this date.

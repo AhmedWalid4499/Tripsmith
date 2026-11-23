@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { DISPLAY_CURRENCIES } from "@/lib/money/currencies";
 import { db } from "@/server/db";
@@ -8,6 +8,7 @@ import type { EditJobParams } from "@/server/generation/edits";
 import { enqueueEdit } from "@/server/jobs/queue";
 import { resequenceDays } from "@/server/planner/resequence";
 import { findOwnedTrip } from "@/server/trip-access";
+import { tripCacheTag } from "@/server/share";
 
 export type ActionResult = { ok?: true; error?: string };
 
@@ -37,6 +38,7 @@ async function hasActiveJob(tripId: string) {
 }
 
 function done(tripId: string): ActionResult {
+  updateTag(tripCacheTag(tripId)); // the shared view, if any
   revalidatePath(`/trips/${tripId}`);
   return { ok: true };
 }
