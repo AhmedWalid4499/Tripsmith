@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "pnpm db:generate"
+  },
+  "deploy": {
+    "startCommand": "pnpm worker",
+    "restartPolicyType": "ALWAYS"
+  }
+}
