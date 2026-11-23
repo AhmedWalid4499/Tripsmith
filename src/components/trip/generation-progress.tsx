@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckIcon, LoaderCircleIcon, RotateCwIcon } from "lucide-react";
 import type { ProgressEvent } from "@/lib/progress-event";
 import { retryGenerationAction } from "@/server/actions/trips";
+import { callAction } from "@/lib/call-action";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -35,12 +36,18 @@ export function GenerationProgress({
   const [state, setState] = useState<ProgressEvent>(initial);
   const [retrying, startRetry] = useTransition();
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [stalled, setStalled] = useState(false);
   const failed = state.tripStatus === "FAILED";
+  const queued = !state.job || state.job.status === "QUEUED";
 
   useEffect(() => {
     if (failed) return;
     const source = new EventSource(`/api/trips/${tripId}/events`);
+    // EventSource reconnects by itself; just tell the user while it does.
+    source.onerror = () => setReconnecting(true);
     source.onmessage = (e) => {
+      setReconnecting(false);
       const next = JSON.parse(e.data) as ProgressEvent;
       setState(next);
       if (next.tripStatus === "READY" || next.tripStatus === "FAILED") {
@@ -50,6 +57,13 @@ export function GenerationProgress({
     };
     return () => source.close();
   }, [tripId, failed, router]);
+
+  // If no worker picks the job up for a while, say so instead of spinning silently.
+  useEffect(() => {
+    if (!queued || failed) return;
+    const timer = setTimeout(() => setStalled(true), 45_000);
+    return () => clearTimeout(timer);
+  }, [queued, failed]);
 
   const progress = state.job?.progress ?? 0;
   const current = stageIndex(state.job?.step);
@@ -67,7 +81,7 @@ export function GenerationProgress({
           disabled={retrying}
           onClick={() =>
             startRetry(async () => {
-              const result = await retryGenerationAction(tripId);
+              const result = await callAction(() => retryGenerationAction(tripId));
               if (result?.error) setRetryError(result.error);
               else setState({ tripStatus: "QUEUED", job: null });
             })
@@ -135,6 +149,20 @@ export function GenerationProgress({
           );
         })}
       </ol>
+      {stalled && queued ? (
+        <p
+          role="status"
+          className="bg-estimate text-estimate-foreground mt-6 rounded-lg px-3 py-2 text-sm"
+        >
+          Still waiting for a free planner. It&apos;s busier than usual; your trip will start
+          automatically, so you can leave this page and come back.
+        </p>
+      ) : null}
+      {reconnecting ? (
+        <p role="status" className="text-muted-foreground mt-6 text-sm">
+          Connection lost. Reconnecting…
+        </p>
+      ) : null}
       <p className="text-muted-foreground mt-6 text-sm">
         This usually takes a minute or two. You can leave this page; your trip keeps building.
       </p>

@@ -3,6 +3,7 @@
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 import { toggleChecklistItemAction } from "@/server/actions/planner";
+import { callAction } from "@/lib/call-action";
 import { dueState } from "@/lib/checklist";
 import { formatDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -44,10 +45,19 @@ export function ChecklistPanel({
   const [, start] = useTransition();
   const doneCount = optimistic.filter((e) => e.done).length;
 
+  if (optimistic.length === 0) {
+    return (
+      <p className="text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
+        No checklist for this trip yet. It&apos;s created with the plan; regenerate the trip to get
+        one.
+      </p>
+    );
+  }
+
   const toggle = (entry: ChecklistEntry, done: boolean) =>
     start(async () => {
       setOptimistic({ id: entry.id, done });
-      const r = await toggleChecklistItemAction(entry.id, done);
+      const r = await callAction(() => toggleChecklistItemAction(entry.id, done));
       if (r.error) toast.error(r.error);
     });
 

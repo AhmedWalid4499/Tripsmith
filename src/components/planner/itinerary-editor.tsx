@@ -52,6 +52,7 @@ import {
   swapItemAction,
   type ActionResult,
 } from "@/server/actions/planner";
+import { callAction } from "@/lib/call-action";
 import { formatDay } from "@/lib/dates";
 import type { RateTable } from "@/lib/money/convert";
 import { formatMoney } from "@/lib/money/currencies";
@@ -193,7 +194,7 @@ export function ItineraryEditor({
 
   const run = (label: string, action: () => Promise<ActionResult>, onError?: () => void) =>
     startTransition(async () => {
-      const result = await action();
+      const result = await callAction(action);
       if (result.error) {
         toast.error(result.error);
         onError?.();

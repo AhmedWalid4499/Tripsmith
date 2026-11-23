@@ -19,6 +19,8 @@ declare module "next-auth" {
 
 function buildConfig(): NextAuthConfig {
   const e = env();
+  if (!e.AUTH_SECRET)
+    throw new Error("AUTH_SECRET is not set (at least 16 characters). See .env.example.");
   const providers: NextAuthConfig["providers"] = [
     Resend({
       apiKey: e.AUTH_RESEND_KEY,

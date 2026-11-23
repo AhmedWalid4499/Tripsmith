@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { selectHotelAction } from "@/server/actions/planner";
+import { callAction } from "@/lib/call-action";
 import { Button } from "@/components/ui/button";
 
 export function ChooseHotelButton({ hotelId, name }: { hotelId: string; name: string }) {
@@ -16,7 +17,7 @@ export function ChooseHotelButton({ hotelId, name }: { hotelId: string; name: st
       aria-label={`Choose ${name}`}
       onClick={() =>
         start(async () => {
-          const r = await selectHotelAction(hotelId);
+          const r = await callAction(() => selectHotelAction(hotelId));
           if (r.error) toast.error(r.error);
           else toast.success(`${name} chosen. Your budget is updated.`);
         })

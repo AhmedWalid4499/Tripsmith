@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { resetShareLinkAction, setSharingAction, type ShareResult } from "@/server/actions/share";
+import { callAction } from "@/lib/call-action";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -47,7 +48,7 @@ export function ShareDialog({
 
   const apply = (action: () => Promise<ShareResult>, success?: string) =>
     start(async () => {
-      const r = await action();
+      const r = await callAction(action);
       if (r.error) return void toast.error(r.error);
       setState({
         isPublic: r.isPublic ?? false,

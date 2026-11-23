@@ -11,6 +11,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { createTripAction } from "@/server/actions/trips";
+import { callAction } from "@/lib/call-action";
 import { COUNTRY_OPTIONS, countryName } from "@/lib/countries";
 import { CURRENCY_LABELS, DISPLAY_CURRENCIES, type DisplayCurrency } from "@/lib/money/currencies";
 import {
@@ -158,10 +159,12 @@ export function TripForm({ defaults, isGuest }: { defaults: TripFormDefaults; is
     if (step < TRIP_FORM_STEPS.length - 1) return goTo(step + 1);
 
     startTransition(async () => {
-      const result = await createTripAction({
-        ...values,
-        budgetAmount: Number(values.budgetAmount),
-      });
+      const result = await callAction(() =>
+        createTripAction({
+          ...values,
+          budgetAmount: Number(values.budgetAmount),
+        }),
+      );
       // On success the action redirects, so we only get here on an error.
       if (result?.error) {
         setFormError({ message: result.error, guestLimit: result.code === "GUEST_LIMIT" });

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { setDisplayCurrencyAction } from "@/server/actions/planner";
+import { callAction } from "@/lib/call-action";
 import { CURRENCY_LABELS, DISPLAY_CURRENCIES, type DisplayCurrency } from "@/lib/money/currencies";
 import {
   Select,
@@ -20,7 +21,7 @@ export function CurrencySwitch({ tripId, value }: { tripId: string; value: Displ
       disabled={pending}
       onValueChange={(next) =>
         start(async () => {
-          const r = await setDisplayCurrencyAction(tripId, next);
+          const r = await callAction(() => setDisplayCurrencyAction(tripId, next));
           if (r.error) toast.error(r.error);
         })
       }
