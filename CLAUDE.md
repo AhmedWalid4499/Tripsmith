@@ -12,7 +12,7 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 | 2. Trip form + generation | Multi-step form, prompts + Zod, mock providers, pg-boss worker, SSE progress | Done  |
 | 3. Planner UI             | Timeline, hotels, visa card, checklist, budget chart, edit/regenerate        | Done  |
 | 4. Sharing                | `/t/[slug]`, OG image, print stylesheet, share toggle                        | Done  |
-| 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               | Next  |
+| 5. Hardening              | Rate limits, error/empty/loading states, tests, Railway deploy               | Done  |
 
 ## Stack
 
@@ -24,7 +24,8 @@ AI trip planner. A user describes a trip (destination or "surprise me", dates or
 - **pg-boss** for background jobs (Postgres-backed, no Redis). Separate `worker` service in production.
 - Deploy target: **Railway** (web + worker + Postgres).
 - Package manager: **pnpm**. Node ≥ 22. The package is **ESM** (`"type": "module"`): the generated Prisma client uses `import.meta`, and the worker uses top-level `await`.
-- **Vitest** for unit tests (`tests/unit/`).
+- **Vitest** for unit tests (`tests/unit/`), integration checks in `tests/integration/` (plain scripts run with tsx against Postgres), **Playwright + axe** for end-to-end tests (`tests/e2e/`, `@playwright/test` pinned to the preinstalled browser's version).
+- CI: `.github/workflows/ci.yml`. Deploy: Railway, `railway.json` (web) and `railway.worker.json` (worker); see README.
 
 ## Commands
 
@@ -41,6 +42,8 @@ pnpm db:generate         # regenerate the Prisma client (run after schema edits)
 pnpm db:studio           # Prisma Studio
 pnpm worker              # generation worker (pg-boss consumer)
 pnpm test                # Vitest unit tests
+pnpm test:integration    # rate limiter + maintenance against the local database
+pnpm test:e2e            # Playwright happy path + axe (builds and starts the app in sample mode on :3100; E2E_SKIP_BUILD=1 reuses a build)
 pnpm tsx-server <file>   # run a TS script with server-only modules, e.g.
 pnpm tsx-server scripts/smoke-generate.ts "Rome and Florence" 6 US   # generate a trip in-process and print it
 ```
@@ -153,3 +156,18 @@ src/generated/prisma/   generated Prisma client (git-ignored)
 - "Create a new link" replaces the slug (the old link 404s). Turning sharing off keeps the slug, so turning it back on restores the same link.
 - Open Graph images: `src/app/t/[slug]/opengraph-image.tsx` (trip card) and `src/app/opengraph-image.tsx` (site card). A private or unknown link renders the generic card and never leaks trip details. Satori needs hex colours (`OG` in `src/server/og.tsx`) and `.woff` fonts (`src/assets/fonts/`, OFL).
 - Print: one `@media print` block in `globals.css`. It hides controls (`[data-slot=button]`, switches, select triggers, `[data-print="hide"]`), prints every planner tab on its own page, keeps list items together and prints external URLs. Mark a button that must survive on paper with `data-print="keep"` (e.g. the official visa link).
+
+### Hardening
+
+- **Rate limits** (`src/server/rate-limit.ts`): Postgres token buckets in `RateLimitBucket`, taken atomically in one SQL statement (safe under concurrency, shared by all instances). Signed-in users are limited per account and guests per IP (`X-Forwarded-For`). `plan` covers create and retry; `edit` covers regenerate and swap. Limits come from env (`GENERATIONS_PER_DAY_*`, `EDITS_PER_DAY_*`). Call `checkGenerationLimit()` in any new action that triggers the model.
+- **Maintenance** (`src/server/jobs/maintenance.ts`), scheduled hourly by the worker through pg-boss cron (only the worker instance has `schedule: true`):
+  - deletes expired guest trips;
+  - fails jobs that have been queued or running for 45+ minutes and releases their trips;
+  - prunes idle rate-limit buckets.
+- **Client → Server Action calls** go through `callAction()` (`src/lib/call-action.ts`). Unexpected failures become `{ error }` and a toast instead of the error page; framework redirects pass through.
+- **Error UI:** `app/error.tsx` (route errors), `app/global-error.tsx` (root layout, inline styles), `not-found.tsx`. The progress screen says when the live connection drops and when a job has waited 45 s without a worker.
+- **Health:** `GET /api/health` checks the database (200 / 503) and is used by the Railway health check.
+- **Security headers** in `next.config.ts`: nosniff, strict referrer, `X-Frame-Options: DENY`, Permissions-Policy, HSTS, and no `X-Powered-By`. There is no CSP yet (it needs nonces for Next's inline scripts).
+- `AUTH_SECRET` is optional in `env()` so the worker can run without it; `auth.ts` throws a clear error if the web app lacks it.
+- Runtime-needed tools are regular dependencies: `prisma` (pre-deploy migrations), `tsx` and `dotenv` (worker).
+- In e2e tests, remember that Cache Components keeps previously visited pages mounted (hidden). Prefer role queries and `exact` text matches.
