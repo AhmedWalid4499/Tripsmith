@@ -5,6 +5,8 @@ export const QUEUES = {
   fullPlan: "trip-full-plan",
   /** Short planner edits (regenerate a day, swap an item), kept apart so they don't wait behind full plans. */
   edit: "trip-edit",
+  /** Hourly housekeeping (see jobs/maintenance.ts). */
+  maintenance: "maintenance",
 } as const;
 
 export type FullPlanJob = { jobId: string };
@@ -27,7 +29,8 @@ export function getBoss(role: Role = "sender"): Promise<PgBoss> {
         application_name: `tripsmith-${role}`,
         max: role === "worker" ? 5 : 2,
         supervise: role === "worker",
-        schedule: false,
+        // Only the worker runs pg-boss cron (the hourly maintenance job).
+        schedule: role === "worker",
       });
       boss.on("error", (error) => console.error(`[pg-boss:${role}]`, error));
       await boss.start();
